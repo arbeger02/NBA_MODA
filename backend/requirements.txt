@@ -1,0 +1,4 @@
+pandas
+scikit-learn
+PyQt6
+nba-api
