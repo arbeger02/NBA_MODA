@@ -1,5 +1,5 @@
-from data_fetcher import fetch_player_data
-from utils import normalize_data
+from .data_fetcher import fetch_player_data
+from .utils import normalize_data
 import pandas as pd
 import numpy as np
 
