@@ -6,7 +6,8 @@ import pandas as pd
 
 def fetch_player_data():
     """
-    Fetches player data from the NBA API.
+    Fetches player data from the NBA API for the 2023-24 season.
+    Filters for players who averaged at least 20 minutes per game.
 
     Returns:
         dict: A dictionary where keys are player names and values are dictionaries of stats.
@@ -14,8 +15,8 @@ def fetch_player_data():
     player_dict = players.get_active_players()
     all_player_stats = {}
 
-    # Get current season
-    current_season = leaguedashplayerstats.LeagueDashPlayerStats(season_type_all_star=SeasonTypeAllStar.default).get_data_frames()[0]['SEASON_ID'][-4:]
+    # Hardcode the current season
+    current_season = '2023-24'
 
     for player in player_dict:
         try:
@@ -23,9 +24,15 @@ def fetch_player_data():
             player_info = commonplayerinfo.CommonPlayerInfo(player_id=player['id']).get_data_frames()[0]
             name = player_info['DISPLAY_FIRST_LAST'][0]
             time.sleep(0.6)  # Avoid rate limiting
+
             # General stats
             general_stats_dash = playerdashboardbyyearoveryear.PlayerDashboardByYearOverYear(player_id=player['id'], per_mode_detailed='PerGame').get_data_frames()[0]
             general_stats_dash = general_stats_dash[general_stats_dash['GROUP_VALUE'] == current_season]
+
+            # Filter by minutes per game
+            if not general_stats_dash.empty and general_stats_dash['MIN'].iloc[0] < 20:
+                print(f"Skipping {name} (less than 20 MPG)")
+                continue
 
             # Clutch stats (using last 5 minutes, score within 5 as an example)
             clutch_stats_dash = playerdashboardbyclutch.PlayerDashboardByClutch(player_id=player['id'], per_mode_detailed='PerGame', measure_type_detailed_defense='Advanced').get_data_frames()[0]
@@ -38,7 +45,6 @@ def fetch_player_data():
             # Shooting stats
             shooting_stats_dash = leaguedashplayerptshot.LeagueDashPlayerPtShot(player_id=player['id'], per_mode_detailed='PerGame', season=current_season, season_type_all_star=SeasonTypeAllStar.default).get_data_frames()[0]
             shooting_stats_dash = shooting_stats_dash[shooting_stats_dash['PLAYER_ID'] == player['id']]
-            
 
             # Combine stats
             player_stats = {
@@ -72,10 +78,10 @@ def fetch_player_data():
                 'DBPM': 0,  # Placeholder
                 'DLA3RAPM': 0, # Placeholder
             }
-            
 
             all_player_stats[name] = player_stats
             print(f"Fetched stats for {name}")
+
         except Exception as e:
             print(f"Error fetching data for {player['full_name']}: {e}")
 
