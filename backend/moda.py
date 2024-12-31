@@ -41,8 +41,6 @@ def calculate_mvp_rankings(weights=None):
         try:
             player_record['Offensive Load'] = calculate_offensive_load(stats)
             player_record['Box Creation'] = calculate_box_creation(stats)
-            player_record['Pomeroy Assist Ratio'] = calculate_pomeroy_assist_ratio(stats)
-            player_record['Defensive Crafted Plus Minus'] = calculate_defensive_crafted_pm(stats)
             player_record['Shooting Quality'] = calculate_shooting_quality(stats)
             player_record['Clutch'] = calculate_clutch(stats)
         except Exception as e:
@@ -83,38 +81,6 @@ def calculate_offensive_load(stats):
     return ((stats['AST'] - (0.38 * box_creation)) * 0.75) + stats['FGA'] + stats['FTA'] * 0.44 + box_creation + stats['TOV']
 
 
-def calculate_pomeroy_assist_ratio(stats):
-    """Calculates Pomeroy Assist Ratio."""
-    return stats['AST'] / (((stats['MP'] / (stats['TmMP'] / 5)) * stats['TmFG']) - stats['FG'])
-
-def calculate_defensive_crafted_pm(stats):
-    """Calculates Defensive Crafted Plus/Minus."""
-    try:
-        ddarko = stats['DDARKO']
-    except Exception as e:
-        print("Issue with DDARKO value")
-        ddarko = 0
-    try:
-        dlebron = stats['DLEBRON']
-    except Exception as e:
-        print("Issue with DLEBRON value")
-        dlebron = 0
-    try:
-        ddrip = stats['DDRIP']
-    except Exception as e:
-        print("Issue with DDRIP value")
-        ddrip = 0
-    try:
-        dbpm = stats['DBPM']
-    except Exception as e:
-        print("Issue with DBPM value")
-        dbpm = 0
-    try:
-        dla3rapm = stats['DLA3RAPM']
-    except Exception as e:
-        print("Issue with DLA3RAPM value")
-        dla3rapm = 0
-    return ((ddarko * 2) + dlebron + ddrip + (dbpm / 2) + (dla3rapm * 2)) / 6.5
 
 def calculate_shooting_quality(stats):
     """Calculates Shooting Quality."""
@@ -139,20 +105,17 @@ def calculate_clutch(stats):
     """
     Calculates a standardized 'Clutch' stat.
 
-    Compares a player's effective FG% and plus/minus in clutch situations
+    Compares a player's effective FG% in clutch situations
     to their overall performance and returns a single standardized value.
     """
-    # Example placeholder logic (you'll need to refine this based on your data)
-    # This is a very simplistic example and should be improved with better logic.
-    clutch_fg_improvement = stats.get('Clutch eFG%', 0) - stats.get('eFG%', 0)
-    clutch_pm_improvement = stats.get('Clutch +/-', 0) - stats.get('+/-', 0)
+    
+    clutch_efg_improvement = stats.get('Clutch eFG%', 0) - stats.get('eFG%', 0)
 
     # Normalize the improvements (this is a placeholder, adjust as needed)
     # You might want to use standard deviation or other normalization techniques.
-    normalized_fg_improvement = clutch_fg_improvement / 0.1  # Example scaling
-    normalized_pm_improvement = clutch_pm_improvement / 5    # Example scaling
+    normalized_efg_improvement = clutch_efg_improvement / 0.1  # Example scaling
 
     # Combine the normalized values into a single 'Clutch' stat
-    clutch_stat = (normalized_fg_improvement + normalized_pm_improvement) / 2
+    clutch_stat = normalized_efg_improvement
 
     return clutch_stat

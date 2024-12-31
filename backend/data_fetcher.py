@@ -1,8 +1,81 @@
 from nba_api.stats.static import players
-from nba_api.stats.endpoints import playerdashboardbyyearoveryear, commonplayerinfo, leaguedashplayerstats, playerdashboardbyclutch, leaguedashplayerptshot
-from nba_api.stats.library.parameters import SeasonTypeAllStar
+from nba_api.stats.endpoints import commonplayerinfo, leaguedashplayerstats, leaguedashplayerclutch, leaguedashplayerbiostats, draftcombinestats
+import requests
+from bs4 import BeautifulSoup
 import time
 import pandas as pd
+
+def get_advanced_defensive_stats(player_name, season):
+    """
+    Web scrapes Basketball Reference for a given player and season to retrieve DWS and DBPM.
+    
+    Parameters:
+        player_name (str): The name of the player (e.g., "LeBron James").
+        season (str): The season year in the format "YYYY-YY" (e.g., "2023-24").
+    
+    Returns:
+        dict: A dictionary containing the player's DWS and DBPM for the specified season.
+    """
+    # Split the string into the start year and the last two digits of the end year
+    start_year, end_short = season.split('-')
+    
+    # Extract the first two digits of the start year
+    century = start_year[:2]
+    
+    # Combine the century with the last two digits to form the full end year
+    season = int(century + end_short)
+
+    # Split the player name into first and last name
+    first_name, last_name = player_name.lower().split()
+    
+    # Construct the player's URL
+    player_url = f"https://www.basketball-reference.com/players/{last_name[0]}/{last_name[:5]}{first_name[:2]}01.html"
+    
+    # Send a GET request to the player's page
+    response = requests.get(player_url)
+    
+    # Check if the request was successful
+    if response.status_code != 200:
+        raise Exception(f"Failed to retrieve data for {player_name}. Status code: {response.status_code}")
+    
+    # Parse the HTML content using BeautifulSoup
+    soup = BeautifulSoup(response.content, "html.parser")
+    
+    # Locate the Advanced table
+    advanced_table = soup.find("table", {"id": "advanced"})
+    
+    if not advanced_table:
+        raise Exception(f"Advanced stats table not found for {player_name}.")
+    
+    # Extract the header row to find the indices of DWS and DBPM
+    header_row = advanced_table.find("thead").find("tr")
+    headers = [th.text for th in header_row.find_all("th")]
+    
+    # Find the indices of DWS and DBPM
+    try:
+        dws_index = headers.index("DWS")
+        dbpm_index = headers.index("DBPM")
+    except ValueError:
+        raise Exception("DWS or DBPM column not found in the Advanced table.")
+    
+    # Locate the row for the specified season
+    season_row = advanced_table.find("tbody").find("tr", {"id": f"advanced.{season}"})
+    
+    if not season_row:
+        raise Exception(f"No data found for {player_name} in the {season} season.")
+    
+    # Extract the player's DWS and DBPM from the row
+    # Note: The data rows have an additional "th" tag for the season, so we need to offset the indices by 1
+    dws = season_row.find_all("td")[dws_index - 1].text
+    dbpm = season_row.find_all("td")[dbpm_index - 1].text
+    
+    # Return the results as a dictionary
+    return {
+        "Player": player_name,
+        "Season": season,
+        "DWS": dws,
+        "DBPM": dbpm
+    }
 
 def fetch_player_data():
     """
@@ -12,11 +85,23 @@ def fetch_player_data():
     Returns:
         dict: A dictionary where keys are player names and values are dictionaries of stats.
     """
-    player_dict = players.get_active_players()
+    player_dict = players.find_players_by_full_name("Lebron James")
     all_player_stats = {}
 
     # Hardcode the current season
     current_season = '2023-24'
+
+    general_stats = leaguedashplayerstats.LeagueDashPlayerStats(season=current_season, rank='N')
+    general_stats_df = general_stats.get_data_frames()[0]
+
+    advanced_stats = leaguedashplayerbiostats.LeagueDashPlayerBioStats(season=current_season)
+    advanced_stats_df = advanced_stats.get_data_frames()[0]
+
+    clutch_stats = leaguedashplayerclutch.LeagueDashPlayerClutch(season=current_season, rank='N')
+    clutch_stats_df = clutch_stats.get_data_frames()[0]
+
+    combine_stats = draftcombinestats.DraftCombineStats(season_all_time='All Time')
+    combine_stats_df = combine_stats.get_data_frames()[0]
 
     for player in player_dict:
         try:
@@ -26,61 +111,52 @@ def fetch_player_data():
             time.sleep(0.6)  # Avoid rate limiting
 
             # General stats
-            general_stats_dash = playerdashboardbyyearoveryear.PlayerDashboardByYearOverYear(player_id=player['id'], per_mode_detailed='PerGame').get_data_frames()[0]
-            general_stats_dash = general_stats_dash[general_stats_dash['GROUP_VALUE'] == current_season]
+            general_stats_df_player = general_stats_df[general_stats_df['PLAYER_ID'] == player['id']]
 
-            # Filter by minutes per game
-            if not general_stats_dash.empty and general_stats_dash['MIN'].iloc[0] < 20:
-                print(f"Skipping {name} (less than 20 MPG)")
-                continue
+            # Advanced stats
+            advanced_stats_df_player = advanced_stats_df[advanced_stats_df['PLAYER_ID'] == player['id']]
 
-            # Clutch stats (using last 5 minutes, score within 5 as an example)
-            clutch_stats_dash = playerdashboardbyclutch.PlayerDashboardByClutch(player_id=player['id'], per_mode_detailed='PerGame', measure_type_detailed_defense='Advanced').get_data_frames()[0]
-            clutch_stats_dash = clutch_stats_dash[clutch_stats_dash['GROUP_VALUE'] == current_season]
+            # Clutch stats
+            clutch_stats_df_player = clutch_stats_df[clutch_stats_df['PLAYER_ID'] == player['id']]
 
-            # Add more detailed clutch stats if available
-            clutch_efg = clutch_stats_dash['EFG_PCT'].iloc[0] if not clutch_stats_dash.empty else 0
-            clutch_plus_minus = clutch_stats_dash['PLUS_MINUS'].iloc[0] if not clutch_stats_dash.empty else 0
+            # Combine stats
+            combine_stats_df_player = combine_stats_df[combine_stats_df['PLAYER_ID'] == player['id']]
 
-            # Shooting stats
-            shooting_stats_dash = leaguedashplayerptshot.LeagueDashPlayerPtShot(player_id=player['id'], per_mode_detailed='PerGame', season=current_season, season_type_all_star=SeasonTypeAllStar.default).get_data_frames()[0]
-            shooting_stats_dash = shooting_stats_dash[shooting_stats_dash['PLAYER_ID'] == player['id']]
+            # Defense stats
+            defense_stats = get_advanced_defensive_stats(name, current_season)
 
             # Combine stats
             player_stats = {
-                'Height': player_info['HEIGHT'][0],
-                'Weight': player_info['WEIGHT'][0],
-                'PTS': general_stats_dash['PTS'].iloc[0] if not general_stats_dash.empty else 0,
-                'AST': general_stats_dash['AST'].iloc[0] if not general_stats_dash.empty else 0,
-                'TOV': general_stats_dash['TOV'].iloc[0] if not general_stats_dash.empty else 0,
-                '3PA': general_stats_dash['FG3A'].iloc[0] if not general_stats_dash.empty else 0,
-                '3P%': general_stats_dash['FG3_PCT'].iloc[0] if not general_stats_dash.empty else 0,
-                'MP': general_stats_dash['MIN'].iloc[0] if not general_stats_dash.empty else 0,
-                'TmMP': general_stats_dash['GP'].iloc[0] * 48 if not general_stats_dash.empty else 0, # Assuming 48 minutes per game
-                'TmFG': general_stats_dash['TEAM_FGM'].iloc[0] if not general_stats_dash.empty else 0, # Assuming you have team FG made somewhere
-                'FG': general_stats_dash['FGM'].iloc[0] if not general_stats_dash.empty else 0,
-                'FGA': general_stats_dash['FGA'].iloc[0] if not general_stats_dash.empty else 0,
-                'FTA': general_stats_dash['FTA'].iloc[0] if not general_stats_dash.empty else 0,
-                'eFG%': general_stats_dash['EFG_PCT'].iloc[0] if not general_stats_dash.empty else 0,
-                'FT%': general_stats_dash['FT_PCT'].iloc[0] if not general_stats_dash.empty else 0,
-                '+/-': general_stats_dash['PLUS_MINUS'].iloc[0] if not general_stats_dash.empty else 0,
-                'Clutch eFG%': clutch_efg,
-                'Clutch +/-': clutch_plus_minus,
-                'Spacing': shooting_stats_dash['EFG_PCT'].iloc[0] if not shooting_stats_dash.empty else 0,  # Example, adjust as needed
-                'Max Vertical Leap': 0, # Placeholder, you'll need another data source for this
-                'Wingspan': 0,  # Placeholder, you'll need another data source for this
-                'Usage %': general_stats_dash['USG_PCT'].iloc[0] if not general_stats_dash.empty else 0,
-                'ORB%': general_stats_dash['OREB_PCT'].iloc[0] if not general_stats_dash.empty else 0,
-                'DRB%': general_stats_dash['DREB_PCT'].iloc[0] if not general_stats_dash.empty else 0,
-                'DDARKO': 0,  # Placeholder
-                'DLEBRON': 0,  # Placeholder
-                'DDRIP': 0,  # Placeholder
-                'DBPM': 0,  # Placeholder
-                'DLA3RAPM': 0, # Placeholder
+                'Height': advanced_stats_df_player['PLAYER_HEIGHT_INCHES'].iloc[0],
+                'Weight': advanced_stats_df_player['PLAYER_WEIGHT'].iloc[0],
+                'PTS': general_stats_df_player['PTS'].iloc[0] if not general_stats_df_player.empty else 0,
+                'AST': general_stats_df_player['AST'].iloc[0] if not general_stats_df_player.empty else 0,
+                'TOV': general_stats_df_player['TOV'].iloc[0] if not general_stats_df_player.empty else 0,
+                '3PA': general_stats_df_player['FG3A'].iloc[0] if not general_stats_df_player.empty else 0,
+                '3P%': general_stats_df_player['FG3_PCT'].iloc[0] if not general_stats_df_player.empty else 0,
+                'MP': general_stats_df_player['MIN'].iloc[0] if not general_stats_df_player.empty else 0,
+                'TmMP': general_stats_df_player['GP'].iloc[0] * 48 if not general_stats_df_player.empty else 0, # Assuming 48 minutes per game
+                'FG': general_stats_df_player['FGM'].iloc[0] if not general_stats_df_player.empty else 0,
+                'FGA': general_stats_df_player['FGA'].iloc[0] if not general_stats_df_player.empty else 0,
+                'FTA': general_stats_df_player['FTA'].iloc[0] if not general_stats_df_player.empty else 0,
+                'TS%': advanced_stats_df_player['TS_PCT'].iloc[0] if not advanced_stats_df_player.empty else 0,
+                'FT%': general_stats_df_player['FT_PCT'].iloc[0] if not general_stats_df_player.empty else 0,
+                '+/-': general_stats_df_player['PLUS_MINUS'].iloc[0] if not general_stats_df_player.empty else 0,
+                'Clutch PTS': clutch_stats_df_player['PTS'].iloc[0] if not clutch_stats_df_player.empty else 0,
+                'Clutch FGA': clutch_stats_df_player['FGA'].iloc[0] if not clutch_stats_df_player.empty else 0,
+                'Clutch FTA': clutch_stats_df_player['FTA'].iloc[0] if not clutch_stats_df_player.empty else 0,
+                'Clutch +/-': clutch_stats_df_player['PLUS_MINUS'].iloc[0] if not clutch_stats_df_player.empty else 0,
+                'Max Vertical Leap': combine_stats_df_player['MAX_VERTICAL_LEAP'].iloc[0] if not combine_stats_df_player.empty else 0,
+                'Wingspan': combine_stats_df_player['WINGSPAN'].iloc[0] if not combine_stats_df_player.empty else 0,
+                'Usage %': advanced_stats_df_player['USG_PCT'].iloc[0] if not advanced_stats_df_player.empty else 0,
+                'ORB%': advanced_stats_df_player['OREB_PCT'].iloc[0] if not advanced_stats_df_player.empty else 0,
+                'DRB%': advanced_stats_df_player['DREB_PCT'].iloc[0] if not advanced_stats_df_player.empty else 0,
+                'POM_AST': advanced_stats_df_player['AST_PCT'].iloc[0] if not advanced_stats_df_player.empty else 0,
+                'DBPM': defense_stats['DBPM'], 
+                'DWS': defense_stats['DWS']
             }
 
             all_player_stats[name] = player_stats
-            print(f"Fetched stats for {name}")
 
         except Exception as e:
             print(f"Error fetching data for {player['full_name']}: {e}")

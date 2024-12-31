@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
     QMessageBox
 )
 from PyQt6.QtCore import Qt, pyqtSlot
-from moda import calculate_mvp_rankings, DEFAULT_WEIGHTS
+from backend.moda import calculate_mvp_rankings, DEFAULT_WEIGHTS
 import traceback
 
 class MVPApp(QWidget):
