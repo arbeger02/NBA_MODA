@@ -4,7 +4,7 @@ import requests
 from bs4 import BeautifulSoup
 import time
 import pandas as pd
-import config
+from .config import get_league_efg, set_league_efg
 
 def get_advanced_defensive_stats(player_name, season):
     """
@@ -86,17 +86,24 @@ def fetch_player_data():
     Returns:
         dict: A dictionary where keys are player names and values are dictionaries of stats.
     """
-    player_dict = players.find_players_by_full_name("Lebron James")
     all_player_stats = {}
 
     # Hardcode the current season
-    current_season = '2023-24'
+    current_season = '2024-25'
 
+    # Fetch general stats to filter players by MPG
     general_stats = leaguedashplayerstats.LeagueDashPlayerStats(season=current_season, rank='N')
     general_stats_df = general_stats.get_data_frames()[0]
 
+    # Create player_dict with players having MPG >= 25
+    player_dict = [
+        {'id': row['PLAYER_ID'], 'full_name': row['PLAYER_NAME']}
+        for index, row in general_stats_df.iterrows()
+        if row['MIN'] >= 25
+    ]
+
     general_stats_per100 = leaguedashplayerstats.LeagueDashPlayerStats(season=current_season, rank='N', per_mode_detailed='Per100Possessions')
-    general_stats__per100_df = general_stats.get_data_frames()[0]
+    general_stats__per100_df = general_stats_per100.get_data_frames()[0]
 
     advanced_stats = leaguedashplayerbiostats.LeagueDashPlayerBioStats(season=current_season)
     advanced_stats_df = advanced_stats.get_data_frames()[0]
@@ -142,6 +149,7 @@ def fetch_player_data():
                 '3PA': general_stats_df_player['FG3A'].iloc[0] if not general_stats_df_player.empty else 0,
                 '3PAper100': general_stats__per100_df_player['FG3A'].iloc[0] if not general_stats__per100_df_player.empty else 0,
                 '3P%': general_stats_df_player['FG3_PCT'].iloc[0] if not general_stats_df_player.empty else 0,
+                'GP': general_stats_df_player['GP'].iloc[0] if not general_stats_df_player.empty else 0,
                 'MP': general_stats_df_player['MIN'].iloc[0] if not general_stats_df_player.empty else 0,
                 'TmMP': general_stats_df_player['GP'].iloc[0] * 48 if not general_stats_df_player.empty else 0, # Assuming 48 minutes per game
                 'FG': general_stats_df_player['FGM'].iloc[0] if not general_stats_df_player.empty else 0,
@@ -198,9 +206,9 @@ def get_nba_efg(season):
         return None
 
 # Example usage: Get eFG% for the 2023-24 season
-current_season = '2023-24'
+current_season = '2024-25'
 efg = get_nba_efg(current_season)
 
 if efg:
     # Save to config file
-    config.set_league_efg(efg)
+    set_league_efg(efg)
