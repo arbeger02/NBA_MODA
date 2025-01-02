@@ -1,9 +1,10 @@
 from nba_api.stats.static import players
-from nba_api.stats.endpoints import commonplayerinfo, leaguedashplayerstats, leaguedashplayerclutch, leaguedashplayerbiostats, draftcombinestats
+from nba_api.stats.endpoints import commonplayerinfo, leaguedashplayerstats, leaguedashplayerclutch, leaguedashplayerbiostats, draftcombinestats, leaguedashteamstats
 import requests
 from bs4 import BeautifulSoup
 import time
 import pandas as pd
+import config
 
 def get_advanced_defensive_stats(player_name, season):
     """
@@ -94,6 +95,9 @@ def fetch_player_data():
     general_stats = leaguedashplayerstats.LeagueDashPlayerStats(season=current_season, rank='N')
     general_stats_df = general_stats.get_data_frames()[0]
 
+    general_stats_per100 = leaguedashplayerstats.LeagueDashPlayerStats(season=current_season, rank='N', per_mode_detailed='Per100Possessions')
+    general_stats__per100_df = general_stats.get_data_frames()[0]
+
     advanced_stats = leaguedashplayerbiostats.LeagueDashPlayerBioStats(season=current_season)
     advanced_stats_df = advanced_stats.get_data_frames()[0]
 
@@ -112,6 +116,9 @@ def fetch_player_data():
 
             # General stats
             general_stats_df_player = general_stats_df[general_stats_df['PLAYER_ID'] == player['id']]
+
+            # General stats per 100 possessions
+            general_stats__per100_df_player = general_stats__per100_df[general_stats__per100_df['PLAYER_ID'] == player['id']]
 
             # Advanced stats
             advanced_stats_df_player = advanced_stats_df[advanced_stats_df['PLAYER_ID'] == player['id']]
@@ -133,6 +140,7 @@ def fetch_player_data():
                 'AST': general_stats_df_player['AST'].iloc[0] if not general_stats_df_player.empty else 0,
                 'TOV': general_stats_df_player['TOV'].iloc[0] if not general_stats_df_player.empty else 0,
                 '3PA': general_stats_df_player['FG3A'].iloc[0] if not general_stats_df_player.empty else 0,
+                '3PAper100': general_stats__per100_df_player['FG3A'].iloc[0] if not general_stats__per100_df_player.empty else 0,
                 '3P%': general_stats_df_player['FG3_PCT'].iloc[0] if not general_stats_df_player.empty else 0,
                 'MP': general_stats_df_player['MIN'].iloc[0] if not general_stats_df_player.empty else 0,
                 'TmMP': general_stats_df_player['GP'].iloc[0] * 48 if not general_stats_df_player.empty else 0, # Assuming 48 minutes per game
@@ -142,16 +150,16 @@ def fetch_player_data():
                 'TS%': advanced_stats_df_player['TS_PCT'].iloc[0] if not advanced_stats_df_player.empty else 0,
                 'FT%': general_stats_df_player['FT_PCT'].iloc[0] if not general_stats_df_player.empty else 0,
                 '+/-': general_stats_df_player['PLUS_MINUS'].iloc[0] if not general_stats_df_player.empty else 0,
-                'Clutch PTS': clutch_stats_df_player['PTS'].iloc[0] if not clutch_stats_df_player.empty else 0,
-                'Clutch FGA': clutch_stats_df_player['FGA'].iloc[0] if not clutch_stats_df_player.empty else 0,
-                'Clutch FTA': clutch_stats_df_player['FTA'].iloc[0] if not clutch_stats_df_player.empty else 0,
-                'Clutch +/-': clutch_stats_df_player['PLUS_MINUS'].iloc[0] if not clutch_stats_df_player.empty else 0,
-                'Max Vertical Leap': combine_stats_df_player['MAX_VERTICAL_LEAP'].iloc[0] if not combine_stats_df_player.empty else 0,
+                'Clutch_PTS': clutch_stats_df_player['PTS'].iloc[0] if not clutch_stats_df_player.empty else 0,
+                'Clutch_FGA': clutch_stats_df_player['FGA'].iloc[0] if not clutch_stats_df_player.empty else 0,
+                'Clutch_FTA': clutch_stats_df_player['FTA'].iloc[0] if not clutch_stats_df_player.empty else 0,
+                'Clutch_+/-': clutch_stats_df_player['PLUS_MINUS'].iloc[0] if not clutch_stats_df_player.empty else 0,
+                'Max_Vertical_Leap': combine_stats_df_player['MAX_VERTICAL_LEAP'].iloc[0] if not combine_stats_df_player.empty else 0,
                 'Wingspan': combine_stats_df_player['WINGSPAN'].iloc[0] if not combine_stats_df_player.empty else 0,
-                'Usage %': advanced_stats_df_player['USG_PCT'].iloc[0] if not advanced_stats_df_player.empty else 0,
+                'Usage%': advanced_stats_df_player['USG_PCT'].iloc[0] if not advanced_stats_df_player.empty else 0,
                 'ORB%': advanced_stats_df_player['OREB_PCT'].iloc[0] if not advanced_stats_df_player.empty else 0,
                 'DRB%': advanced_stats_df_player['DREB_PCT'].iloc[0] if not advanced_stats_df_player.empty else 0,
-                'POM_AST': advanced_stats_df_player['AST_PCT'].iloc[0] if not advanced_stats_df_player.empty else 0,
+                'pAST%': advanced_stats_df_player['AST_PCT'].iloc[0] if not advanced_stats_df_player.empty else 0,
                 'DBPM': defense_stats['DBPM'], 
                 'DWS': defense_stats['DWS']
             }
@@ -162,3 +170,37 @@ def fetch_player_data():
             print(f"Error fetching data for {player['full_name']}: {e}")
 
     return all_player_stats
+
+def get_nba_efg(season):
+    """
+    Fetches the league-wide Effective Field Goal Percentage (eFG%) for a given season.
+
+    Args:
+        season (str): The NBA season (e.g., '2023-24').
+
+    Returns:
+        float: The league-wide eFG% for the season, or None if an error occurs.
+    """
+    try:
+        # Fetch team stats for the given season
+        team_stats = leaguedashteamstats.LeagueDashTeamStats(
+            season=season,
+            measure_type_detailed_defense='Advanced'  # Get advanced stats
+        ).get_data_frames()[0]
+
+        # Calculate the league-wide eFG%
+        league_efg = team_stats['EFG_PCT'].mean()
+
+        return league_efg
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return None
+
+# Example usage: Get eFG% for the 2023-24 season
+current_season = '2023-24'
+efg = get_nba_efg(current_season)
+
+if efg:
+    # Save to config file
+    config.set_league_efg(efg)
